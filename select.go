@@ -2,259 +2,52 @@ package toyorm
 
 import (
 	"context"
-	"database/sql"
 	"github.com/aristletl/toyorm/internal/errs"
-	"github.com/aristletl/toyorm/model"
-	"strings"
+	"github.com/aristletl/toyorm/internal/valuer"
 )
 
-// Selector 用于构造 SELECT 语句
 type Selector[T any] struct {
-	sb      strings.Builder
-	args    []any
-	table   string
-	where   []Predicate
-	having  []Predicate
-	model   *model.Model
-	db      *DB
-	columns []Selectable
-	groupBy []Column
-	orderBy []OrderBy
-	offset  int
-	limit   int
+	SQLBuilder
+	db         *DB
+	valCreator valuer.Creator
+
+	tableName string
+	where     []Predicate
+	columns   []Selectable
+	groupBy   []Column
+	orderBy   []OrderBy
+	having    []Predicate
+	offset    int
+	limit     int
 }
 
+// NewSelector 泛型T不支持指针
+func NewSelector[T any](db *DB) *Selector[T] {
+	return &Selector[T]{
+		db:         db,
+		valCreator: valuer.NewReflectValue,
+	}
+}
+
+// SQLSelect select语句指定列名，因为这里既可以是列名又可以是聚合函数
+// 因此，将参数设计为 selectable 接口
 func (s *Selector[T]) Select(cols ...Selectable) *Selector[T] {
 	s.columns = cols
 	return s
 }
 
-// From 指定表名，如果是空字符串，那么将会使用默认表名
-func (s *Selector[T]) From(tbl string) *Selector[T] {
-	s.table = tbl
-	return s
-}
-
-func (s *Selector[T]) Build() (*Query, error) {
-	var (
-		t   T
-		err error
-	)
-	s.model, err = s.db.r.Get(&t)
-	if err != nil {
-		return nil, err
-	}
-	s.sb.WriteString("SELECT ")
-	if err = s.buildColumns(); err != nil {
-		return nil, err
-	}
-	s.sb.WriteString(" FROM ")
-	if s.table == "" {
-		s.sb.WriteByte('`')
-		s.sb.WriteString(s.model.TableName)
-		s.sb.WriteByte('`')
-	} else {
-		s.sb.WriteString(s.table)
-	}
-
-	// 构造 WHERE
-	if len(s.where) > 0 {
-		// 类似这种可有可无的部分，都要在前面加一个空格
-		s.sb.WriteString(" WHERE ")
-		// WHERE 是不允许用别名的
-		if err = s.buildPredicates(s.where); err != nil {
-			return nil, err
-		}
-	}
-
-	if len(s.groupBy) > 0 {
-		s.sb.WriteString(" GROUP BY ")
-		for i, c := range s.groupBy {
-			if i > 0 {
-				s.sb.WriteByte(',')
-			}
-			if err = s.buildColumn(c.name, c.alias); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if len(s.orderBy) > 0 {
-		s.sb.WriteString(" ORDER BY ")
-		err = s.buildOrderBy()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(s.having) > 0 {
-		s.sb.WriteString(" HAVING ")
-		// HAVING 是可以用别名的
-		if err = s.buildPredicates(s.having); err != nil {
-			return nil, err
-		}
-	}
-
-	if s.limit > 0 {
-		s.sb.WriteString(" LIMIT ?")
-		s.addArgs(s.limit)
-	}
-
-	if s.offset > 0 {
-		s.sb.WriteString(" OFFSET ?")
-		s.addArgs(s.offset)
-	}
-
-	s.sb.WriteString(";")
-	return &Query{
-		SQL:  s.sb.String(),
-		Args: s.args,
-	}, nil
-}
-
-func (s *Selector[T]) buildOrderBy() error {
-	for idx, ob := range s.orderBy {
-		if idx > 0 {
-			s.sb.WriteByte(',')
-		}
-		err := s.buildColumn(ob.col, "")
-		if err != nil {
-			return err
-		}
-		s.sb.WriteByte(' ')
-		s.sb.WriteString(ob.order)
-	}
-	return nil
-}
-
-func (s *Selector[T]) buildPredicates(ps []Predicate) error {
-	p := ps[0]
-	for i := 1; i < len(ps); i++ {
-		p = p.And(ps[i])
-	}
-	return s.buildExpression(p)
-}
-
-func (s *Selector[T]) buildColumns() error {
-	if len(s.columns) == 0 {
-		s.sb.WriteByte('*')
-		return nil
-	}
-	for i, c := range s.columns {
-		if i > 0 {
-			s.sb.WriteByte(',')
-		}
-		switch val := c.(type) {
-		case Column:
-			if err := s.buildColumn(val.name, val.alias); err != nil {
-				return err
-			}
-		case Aggregate:
-			if err := s.buildAggregate(val, true); err != nil {
-				return err
-			}
-		case RawExpr:
-			s.sb.WriteString(val.raw)
-			if len(val.args) != 0 {
-				s.addArgs(val.args...)
-			}
-		default:
-			return errs.NewErrUnsupportedSelectable(c)
-		}
-	}
-	return nil
-}
-
-func (s *Selector[T]) buildAggregate(a Aggregate, useAlias bool) error {
-	s.sb.WriteString(a.fn)
-	s.sb.WriteString("(`")
-	fd, ok := s.model.FieldMap[a.arg]
-	if !ok {
-		return errs.NewErrUnknownField(a.arg)
-	}
-	s.sb.WriteString(fd.ColName)
-	s.sb.WriteString("`)")
-	if useAlias {
-		s.buildAs(a.alias)
-	}
-	return nil
-}
-
-func (s *Selector[T]) buildColumn(c string, alias string) error {
-	s.sb.WriteByte('`')
-	fd, ok := s.model.FieldMap[c]
-	if !ok {
-		return errs.NewErrUnknownField(c)
-	}
-	s.sb.WriteString(fd.ColName)
-	s.sb.WriteByte('`')
-	if alias != "" {
-		s.buildAs(alias)
-	}
-	return nil
-}
-
-func (s *Selector[T]) buildExpression(e Expression) error {
-	if e == nil {
-		return nil
-	}
-	switch exp := e.(type) {
-	case Column:
-		return s.buildColumn(exp.name, exp.alias)
-	case Aggregate:
-		return s.buildAggregate(exp, false)
-	case value:
-		s.sb.WriteByte('?')
-		s.addArgs(exp.val)
-	case RawExpr:
-		s.sb.WriteString(exp.raw)
-		if len(exp.args) != 0 {
-			s.addArgs(exp.args...)
-		}
-	case Predicate:
-		return s.buildPredicate(exp)
-	default:
-		return errs.NewErrUnsupportedExpressionType(exp)
-	}
-	return nil
-}
-
-func (s *Selector[T]) buildPredicate(p Predicate) error {
-	_, lp := p.left.(Predicate)
-	if lp {
-		s.sb.WriteByte('(')
-	}
-	if err := s.buildExpression(p.left); err != nil {
-		return err
-	}
-	if lp {
-		s.sb.WriteByte(')')
-	}
-
-	s.sb.WriteByte(' ')
-	s.sb.WriteString(p.op.String())
-	s.sb.WriteByte(' ')
-
-	_, rp := p.right.(Predicate)
-	if rp {
-		s.sb.WriteByte('(')
-	}
-	if err := s.buildExpression(p.right); err != nil {
-		return err
-	}
-	if rp {
-		s.sb.WriteByte(')')
-	}
-	return nil
-}
-
-// Where 用于构造 WHERE 查询条件。如果 ps 长度为 0，那么不会构造 WHERE 部分
+// Where select语句的where
 func (s *Selector[T]) Where(ps ...Predicate) *Selector[T] {
 	s.where = ps
 	return s
 }
 
-// GroupBy 设置 group by 子句
+// From select 语句的 from 指定表名
+func (s *Selector[T]) From(table string) *Selector[T] {
+	s.tableName = table
+	return s
+}
+
 func (s *Selector[T]) GroupBy(cols ...Column) *Selector[T] {
 	s.groupBy = cols
 	return s
@@ -262,6 +55,11 @@ func (s *Selector[T]) GroupBy(cols ...Column) *Selector[T] {
 
 func (s *Selector[T]) Having(ps ...Predicate) *Selector[T] {
 	s.having = ps
+	return s
+}
+
+func (s *Selector[T]) OrderBy(os ...OrderBy) *Selector[T] {
+	s.orderBy = os
 	return s
 }
 
@@ -275,11 +73,7 @@ func (s *Selector[T]) Limit(limit int) *Selector[T] {
 	return s
 }
 
-func (s *Selector[T]) OrderBy(orderBys ...OrderBy) *Selector[T] {
-	s.orderBy = orderBys
-	return s
-}
-
+// Get 数据库查询
 func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	q, err := s.Build()
 	if err != nil {
@@ -294,7 +88,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	}
 
 	if !rows.Next() {
-		return nil, ErrNoRows
+		return nil, errs.ErrNoRows
 	}
 
 	tp := new(T)
@@ -302,70 +96,204 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	val := s.db.valCreator(tp, meta)
+	val := s.valCreator(tp, meta)
 	err = val.SetColumns(rows)
 	return tp, err
 }
 
-func (s *Selector[T]) addArgs(args ...any) {
-	if s.args == nil {
-		s.args = make([]any, 0, 8)
-	}
-	s.args = append(s.args, args...)
-}
+func (s *Selector[T]) Build() (*Query, error) {
+	var (
+		err error
+		t   T
+	)
 
-func (s *Selector[T]) buildAs(alias string) {
-	if alias != "" {
-		s.sb.WriteString(" AS ")
-		s.sb.WriteByte('`')
-		s.sb.WriteString(alias)
-		s.sb.WriteByte('`')
-	}
-}
-
-func (s *Selector[T]) GetMulti(ctx context.Context) ([]*T, error) {
-	var db sql.DB
-	q, err := s.Build()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.QueryContext(ctx, q.SQL, q.Args...)
+	s.model, err = s.db.r.Get(&t)
 	if err != nil {
 		return nil, err
 	}
 
-	for rows.Next() {
-		// 在这里构造 []*T
+	s.builder.WriteString(SQLSelect)
+	if err = s.buildColumns(); err != nil {
+		return nil, err
 	}
 
-	panic("implement me")
+	s.buildFrom()
+
+	err = s.buildWhere()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.buildGroupBy()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.buildHaving()
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.buildOrderBy()
+	if err != nil {
+		return nil, err
+	}
+
+	if s.limit > 0 {
+		s.builder.WriteString(" LIMIT ?")
+		s.addArgs(s.limit)
+	}
+
+	if s.offset > 0 {
+		s.builder.WriteString(" OFFSET ?")
+		s.addArgs(s.offset)
+	}
+
+	return &Query{
+		SQL:  s.string(),
+		Args: s.args,
+	}, nil
 }
 
-func NewSelector[T any](db *DB) *Selector[T] {
-	return &Selector[T]{
-		db: db,
+//func (s *Selector[T]) buildExpression(exp Expression) error {
+//	switch e := exp.(type) {
+//	case Column:
+//		return s.buildColumn(e.name)
+//	case Value:
+//		s.builder.WriteString("?")
+//		s.args = append(s.args, e.val)
+//	case Predicate:
+//		_, lp := e.left.(Predicate)
+//		if lp {
+//			s.builder.WriteByte('(')
+//		}
+//		if err := s.buildExpression(e.left); err != nil {
+//			return err
+//		}
+//		if lp {
+//			s.builder.WriteString(")")
+//		}
+//
+//		s.margin(e.op.String())
+//
+//		_, rp := e.right.(Predicate)
+//		if rp {
+//			s.builder.WriteByte('(')
+//		}
+//		if err := s.buildExpression(e.right); err != nil {
+//			return err
+//		}
+//		if rp {
+//			s.builder.WriteByte(')')
+//		}
+//	case Aggregate:
+//
+//	case nil:
+//		return nil
+//	default:
+//		return errs.NewErrUnsupportedExpressionType(exp)
+//	}
+//	return nil
+//}
+
+func (s *Selector[T]) buildColumns() error {
+	if len(s.columns) == 0 {
+		s.builder.WriteString("*")
+		return nil
 	}
+
+	for i, c := range s.columns {
+		if i > 0 {
+			s.comma()
+		}
+		switch col := c.(type) {
+		case Column:
+			if err := s.buildColumn(col.name); err != nil {
+				return err
+			}
+			s.as(col.alias)
+		case Aggregate:
+			if err := s.buildAggregate(col, true); err != nil {
+				return err
+			}
+		case RawExpr:
+			s.builder.WriteString(col.raw)
+			if len(col.args) != 0 {
+				s.args = append(s.args, col.args...)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Selector[T]) buildPredicates(pres []Predicate) error {
+	pred := pres[0]
+	for i := 1; i < len(pres); i++ {
+		pred = pred.AND(pres[i])
+	}
+	return s.buildExpression(pred)
+}
+
+func (s *Selector[T]) buildWhere() error {
+	if len(s.where) != 0 {
+		s.margin(SQLWhere)
+		return s.buildPredicates(s.where)
+	}
+	return nil
+}
+
+func (s *Selector[T]) buildFrom() {
+	s.margin(SQLFrom)
+	if s.tableName == "" {
+		s.tableName = s.model.TableName
+		s.quota(s.tableName)
+	} else {
+		s.tableName = s.db.r.UnderscoreName(s.tableName)
+		s.builder.WriteString(s.tableName)
+	}
+}
+
+func (s *Selector[T]) buildGroupBy() error {
+	if len(s.groupBy) != 0 {
+		s.margin(SQLGroupBy)
+		for i, c := range s.groupBy {
+			if i > 0 {
+				s.comma()
+			}
+			if err := s.buildColumn(c.name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Selector[T]) buildHaving() error {
+	if len(s.having) != 0 {
+		s.margin(SQLHaving)
+		return s.buildPredicates(s.having)
+	}
+	return nil
+}
+
+func (s *Selector[T]) buildOrderBy() error {
+	if len(s.orderBy) != 0 {
+		s.margin(SQLOrderBy)
+		for i, o := range s.orderBy {
+			if i > 0 {
+				s.comma()
+			}
+			if err := s.buildColumn(o.col); err != nil {
+				return err
+			}
+			s.builder.WriteString(" ")
+			s.builder.WriteString(o.order)
+		}
+	}
+	return nil
 }
 
 type Selectable interface {
 	selectable()
-}
-
-type OrderBy struct {
-	col   string
-	order string
-}
-
-func Asc(col string) OrderBy {
-	return OrderBy{
-		col:   col,
-		order: "ASC",
-	}
-}
-
-func Desc(col string) OrderBy {
-	return OrderBy{
-		col:   col,
-		order: "DESC",
-	}
 }

@@ -3,55 +3,51 @@ package valuer
 import (
 	"database/sql"
 	"github.com/aristletl/toyorm/internal/errs"
-	"github.com/aristletl/toyorm/model"
+	"github.com/aristletl/toyorm/internal/model"
 	"reflect"
 )
 
-// reflectValue 基于反射的 Value
-type reflectValue struct {
-	val  reflect.Value
-	meta *model.Model
+type ReflectValue struct {
+	val   reflect.Value
+	model *model.Model
 }
 
-var _ Creator = NewReflectValue
-
-// NewReflectValue 返回一个封装好的，基于反射实现的 Value
-// 输入 val 必须是一个指向结构体实例的指针，而不能是任何其它类型
-func NewReflectValue(val interface{}, meta *model.Model) Value {
-	return reflectValue{
-		val:  reflect.ValueOf(val).Elem(),
-		meta: meta,
-	}
-}
-
-func (r reflectValue) SetColumns(rows *sql.Rows) error {
+func (r ReflectValue) SetColumns(rows *sql.Rows) error {
 	cs, err := rows.Columns()
 	if err != nil {
 		return err
 	}
-	if len(cs) > len(r.meta.FieldMap) {
+
+	if len(cs) > len(r.model.ColMap) {
 		return errs.ErrTooManyReturnedColumns
 	}
 
-	// colValues 和 colEleValues 实质上最终都指向同一个对象
-	colValues := make([]interface{}, len(cs))
+	colValues := make([]any, len(cs))
 	colEleValues := make([]reflect.Value, len(cs))
 	for i, c := range cs {
-		cm, ok := r.meta.ColumnMap[c]
+		fd, ok := r.model.ColMap[c]
 		if !ok {
 			return errs.NewErrUnknownColumn(c)
 		}
-		val := reflect.New(cm.Type)
+		val := reflect.New(fd.Type)
 		colValues[i] = val.Interface()
 		colEleValues[i] = val.Elem()
 	}
 	if err = rows.Scan(colValues...); err != nil {
 		return err
 	}
+
 	for i, c := range cs {
-		cm := r.meta.ColumnMap[c]
-		fd := r.val.FieldByName(cm.GoName)
+		cm := r.model.ColMap[c]
+		fd := r.val.Field(cm.Index)
 		fd.Set(colEleValues[i])
 	}
 	return nil
+}
+
+func NewReflectValue(val any, m *model.Model) Value {
+	return ReflectValue{
+		val:   reflect.ValueOf(val).Elem(),
+		model: m,
+	}
 }

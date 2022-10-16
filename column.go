@@ -5,54 +5,60 @@ type Column struct {
 	alias string
 }
 
-func (c Column) expr() {}
-
 func (c Column) selectable() {}
 
-func (c Column) As(alias string) Column {
+func (c Column) Expr() {}
+
+func Col(name string) Column {
+	return Column{name: name}
+}
+
+func (c Column) EQ(val any) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opEQ,
+		right: Value{val: val},
+	}
+}
+
+func (c Column) GT(val any) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opGT,
+		right: Value{val: val},
+	}
+}
+
+func (c Column) LT(val any) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opLT,
+		right: Value{val: val},
+	}
+}
+
+func (c Column) AS(alias string) Column {
 	return Column{
 		name:  c.name,
 		alias: alias,
 	}
 }
 
-type value struct {
-	val any
+type OrderBy struct {
+	col   string
+	order string
 }
 
-func (c value) expr() {}
-
-func valueOf(val any) value {
-	return value{
-		val: val,
+func Asc(col string) OrderBy {
+	return OrderBy{
+		col:   col,
+		order: "ASC",
 	}
 }
 
-func C(name string) Column {
-	return Column{name: name}
-}
-
-// EQ 例如 C("id").Eq(12)
-func (c Column) EQ(arg any) Predicate {
-	return Predicate{
-		left:  c,
-		op:    opEQ,
-		right: exprOf(arg),
-	}
-}
-
-func (c Column) LT(arg any) Predicate {
-	return Predicate{
-		left:  c,
-		op:    opLT,
-		right: exprOf(arg),
-	}
-}
-
-func (c Column) GT(arg any) Predicate {
-	return Predicate{
-		left:  c,
-		op:    opGT,
-		right: exprOf(arg),
+func Desc(col string) OrderBy {
+	return OrderBy{
+		col:   col,
+		order: "DESC",
 	}
 }

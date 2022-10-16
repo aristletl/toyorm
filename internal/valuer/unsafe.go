@@ -3,42 +3,42 @@ package valuer
 import (
 	"database/sql"
 	"github.com/aristletl/toyorm/internal/errs"
-	"github.com/aristletl/toyorm/model"
+	"github.com/aristletl/toyorm/internal/model"
 	"reflect"
 	"unsafe"
 )
 
-type unsafeValue struct {
-	addr unsafe.Pointer
-	meta *model.Model
+type UnsafeValue struct {
+	addr  unsafe.Pointer
+	model *model.Model
 }
 
-var _ Creator = NewUnsafeValue
-
-func NewUnsafeValue(val interface{}, meta *model.Model) Value {
-	return unsafeValue{
-		addr: unsafe.Pointer(reflect.ValueOf(val).Pointer()),
-		meta: meta,
+func NewUnsafeValue(val any, m *model.Model) Value {
+	return UnsafeValue{
+		addr:  reflect.ValueOf(val).UnsafePointer(),
+		model: m,
 	}
 }
 
-func (u unsafeValue) SetColumns(rows *sql.Rows) error {
+func (u UnsafeValue) SetColumns(rows *sql.Rows) error {
 	cs, err := rows.Columns()
 	if err != nil {
 		return err
 	}
-	if len(cs) > len(u.meta.ColumnMap) {
+
+	if len(cs) > len(u.model.ColMap) {
 		return errs.ErrTooManyReturnedColumns
 	}
 
-	colValues := make([]interface{}, len(cs))
+	colValues := make([]any, len(cs))
 	for i, c := range cs {
-		cm, ok := u.meta.ColumnMap[c]
+		fd, ok := u.model.ColMap[c]
 		if !ok {
 			return errs.NewErrUnknownColumn(c)
 		}
-		ptr := unsafe.Pointer(uintptr(u.addr) + cm.Offset)
-		val := reflect.NewAt(cm.Type, ptr)
+
+		ptr := unsafe.Pointer(uintptr(u.addr) + fd.Offset)
+		val := reflect.NewAt(fd.Type, ptr)
 		colValues[i] = val.Interface()
 	}
 	return rows.Scan(colValues...)

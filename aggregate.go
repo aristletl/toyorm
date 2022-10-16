@@ -9,9 +9,9 @@ type Aggregate struct {
 
 func (a Aggregate) selectable() {}
 
-func (a Aggregate) expr() {}
+func (a Aggregate) Expr() {}
 
-func (a Aggregate) As(alias string) Aggregate {
+func (a Aggregate) AS(alias string) Aggregate {
 	return Aggregate{
 		fn:    a.fn,
 		arg:   a.arg,
@@ -24,7 +24,7 @@ func (a Aggregate) EQ(arg any) Predicate {
 	return Predicate{
 		left:  a,
 		op:    opEQ,
-		right: exprOf(arg),
+		right: Value{val: arg},
 	}
 }
 
@@ -32,7 +32,7 @@ func (a Aggregate) LT(arg any) Predicate {
 	return Predicate{
 		left:  a,
 		op:    opLT,
-		right: exprOf(arg),
+		right: Value{val: arg},
 	}
 }
 
@@ -40,7 +40,7 @@ func (a Aggregate) GT(arg any) Predicate {
 	return Predicate{
 		left:  a,
 		op:    opGT,
-		right: exprOf(arg),
+		right: Value{val: arg},
 	}
 }
 
