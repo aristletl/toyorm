@@ -13,12 +13,12 @@ type DB struct {
 }
 
 func Open(driver string, dns string, opts ...DBOption) (*DB, error) {
-	//db, err := sql.Open(driver, dns)
-	//if err != nil {
-	//	return nil, err
-	//}
+	db, err := sql.Open(driver, dns)
+	if err != nil {
+		return nil, err
+	}
 
-	return OpenDB(nil, opts...)
+	return OpenDB(db, opts...)
 }
 
 func OpenDB(db *sql.DB, opts ...DBOption) (*DB, error) {

@@ -2,6 +2,7 @@ package toyorm
 
 import (
 	"context"
+
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/valuer"
 )
@@ -25,11 +26,11 @@ type Selector[T any] struct {
 func NewSelector[T any](db *DB) *Selector[T] {
 	return &Selector[T]{
 		db:         db,
-		valCreator: valuer.NewReflectValue,
+		valCreator: valuer.NewUnsafeValue,
 	}
 }
 
-// SQLSelect select语句指定列名，因为这里既可以是列名又可以是聚合函数
+// Select select语句指定列名，因为这里既可以是列名又可以是聚合函数
 // 因此，将参数设计为 selectable 接口
 func (s *Selector[T]) Select(cols ...Selectable) *Selector[T] {
 	s.columns = cols
@@ -92,11 +93,11 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	}
 
 	tp := new(T)
-	meta, err := s.db.r.Get(tp)
-	if err != nil {
-		return nil, err
-	}
-	val := s.valCreator(tp, meta)
+	//meta, err := s.db.r.Get(tp)
+	//if err != nil {
+	//	return nil, err
+	//}
+	val := s.valCreator(tp, s.model)
 	err = val.SetColumns(rows)
 	return tp, err
 }
@@ -154,47 +155,6 @@ func (s *Selector[T]) Build() (*Query, error) {
 		Args: s.args,
 	}, nil
 }
-
-//func (s *Selector[T]) buildExpression(exp Expression) error {
-//	switch e := exp.(type) {
-//	case Column:
-//		return s.buildColumn(e.name)
-//	case Value:
-//		s.builder.WriteString("?")
-//		s.args = append(s.args, e.val)
-//	case Predicate:
-//		_, lp := e.left.(Predicate)
-//		if lp {
-//			s.builder.WriteByte('(')
-//		}
-//		if err := s.buildExpression(e.left); err != nil {
-//			return err
-//		}
-//		if lp {
-//			s.builder.WriteString(")")
-//		}
-//
-//		s.margin(e.op.String())
-//
-//		_, rp := e.right.(Predicate)
-//		if rp {
-//			s.builder.WriteByte('(')
-//		}
-//		if err := s.buildExpression(e.right); err != nil {
-//			return err
-//		}
-//		if rp {
-//			s.builder.WriteByte(')')
-//		}
-//	case Aggregate:
-//
-//	case nil:
-//		return nil
-//	default:
-//		return errs.NewErrUnsupportedExpressionType(exp)
-//	}
-//	return nil
-//}
 
 func (s *Selector[T]) buildColumns() error {
 	if len(s.columns) == 0 {

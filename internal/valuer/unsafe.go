@@ -2,10 +2,11 @@ package valuer
 
 import (
 	"database/sql"
-	"github.com/aristletl/toyorm/internal/errs"
-	"github.com/aristletl/toyorm/internal/model"
 	"reflect"
 	"unsafe"
+
+	"github.com/aristletl/toyorm/internal/errs"
+	"github.com/aristletl/toyorm/internal/model"
 )
 
 type UnsafeValue struct {
@@ -18,6 +19,23 @@ func NewUnsafeValue(val any, m *model.Model) Value {
 		addr:  reflect.ValueOf(val).UnsafePointer(),
 		model: m,
 	}
+}
+
+func (u UnsafeValue) Field(index int) (any, error) {
+	if index < 0 || index >= len(u.model.Columns) {
+		return nil, errs.NewErrUnknownField("")
+	}
+	val := reflect.NewAt(u.model.Columns[index].Type, unsafe.Pointer(uintptr(u.addr)+u.model.Columns[index].Offset)).Elem()
+	return val.Interface(), nil
+}
+
+func (u UnsafeValue) FieldByName(name string) (any, error) {
+	field, ok := u.model.FieldMap[name]
+	if !ok {
+		return nil, errs.NewErrUnknownField(name)
+	}
+	val := reflect.NewAt(field.Type, unsafe.Pointer(uintptr(u.addr)+field.Offset)).Elem()
+	return val.Interface(), nil
 }
 
 func (u UnsafeValue) SetColumns(rows *sql.Rows) error {

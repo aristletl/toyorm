@@ -2,14 +2,29 @@ package valuer
 
 import (
 	"database/sql"
+	"reflect"
+
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/model"
-	"reflect"
 )
 
 type ReflectValue struct {
 	val   reflect.Value
 	model *model.Model
+}
+
+func (r ReflectValue) Field(index int) (any, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r ReflectValue) FieldByName(name string) (any, error) {
+	fd, ok := r.model.FieldMap[name]
+	if !ok {
+		return nil, errs.NewErrUnknownField(name)
+	}
+	res := r.val.Field(fd.Index)
+	return res.Interface(), nil
 }
 
 func (r ReflectValue) SetColumns(rows *sql.Rows) error {
