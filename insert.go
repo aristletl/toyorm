@@ -8,10 +8,11 @@ import (
 
 type Inserter[T any] struct {
 	SQLBuilder
-	db         *DB
-	valCreator valuer.Creator
-	values     []*T
-	columns    []string
+	db          *DB
+	valCreator  valuer.Creator
+	values      []*T
+	columns     []string
+	onDuplicate *OnDuplicateKey
 }
 
 func NewInserter[T any](db *DB) *Inserter[T] {
@@ -43,6 +44,10 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		return nil, err
 	}
 
+	if err = i.buildOnDuplicateKey(); err != nil {
+		return nil, err
+	}
+
 	return &Query{
 		SQL:  i.string(),
 		Args: i.args,
@@ -58,6 +63,12 @@ func (i *Inserter[T]) Columns(cols ...string) *Inserter[T] {
 func (i *Inserter[T]) Values(vals ...*T) *Inserter[T] {
 	i.values = vals
 	return i
+}
+
+func (i *Inserter[T]) OnDuplicateKey() *OnDuplicateKeyBuilder[T] {
+	return &OnDuplicateKeyBuilder[T]{
+		i: i,
+	}
 }
 
 func (i *Inserter[T]) buildColumns() error {
@@ -116,4 +127,44 @@ func (i *Inserter[T]) buildValues() error {
 		i.builder.WriteString(")")
 	}
 	return nil
+}
+
+func (i *Inserter[T]) buildOnDuplicateKey() error {
+	if i.onDuplicate != nil {
+		i.builder.WriteString(" ON DUPLICATE KEY UPDATE ")
+		for idx, assign := range i.onDuplicate.assigns {
+			if idx > 0 {
+				i.comma()
+			}
+			switch expr := assign.(type) {
+			case Assignment:
+				if err := i.buildColumn(expr.column); err != nil {
+					return err
+				}
+				i.builder.WriteString("=?")
+				i.addArgs(expr.val)
+			case Column:
+				if err := i.buildColumn(expr.name); err != nil {
+					return err
+				}
+				i.builder.WriteString("=VALUES(")
+				_ = i.buildColumn(expr.name)
+				i.builder.WriteString(")")
+			}
+		}
+	}
+	return nil
+}
+
+type OnDuplicateKeyBuilder[T any] struct {
+	i *Inserter[T]
+}
+
+func (o *OnDuplicateKeyBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
+	o.i.onDuplicate = &OnDuplicateKey{assigns: assigns}
+	return o.i
+}
+
+type OnDuplicateKey struct {
+	assigns []Assignable
 }
