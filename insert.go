@@ -1,6 +1,8 @@
 package toyorm
 
 import (
+	"context"
+
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/model"
 	"github.com/aristletl/toyorm/internal/valuer"
@@ -12,13 +14,27 @@ type Inserter[T any] struct {
 	valCreator  valuer.Creator
 	values      []*T
 	columns     []string
-	onDuplicate *OnDuplicateKey
+	onDuplicate *Upsert
 }
 
 func NewInserter[T any](db *DB) *Inserter[T] {
 	return &Inserter[T]{
 		db:         db,
 		valCreator: valuer.NewUnsafeValue,
+	}
+}
+
+func (i *Inserter[T]) Exec(ctx context.Context) Result {
+	query, err := i.Build()
+	if err != nil {
+		return Result{res: nil,
+			err: err,
+		}
+	}
+	res, err := i.db.db.ExecContext(ctx, query.SQL, query.Args...)
+	return Result{
+		res: res,
+		err: err,
 	}
 }
 
@@ -44,7 +60,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		return nil, err
 	}
 
-	if err = i.buildOnDuplicateKey(); err != nil {
+	if err = i.db.dialect.BuildOnDuplicateKey(&i.SQLBuilder, i.onDuplicate); err != nil {
 		return nil, err
 	}
 
@@ -65,8 +81,8 @@ func (i *Inserter[T]) Values(vals ...*T) *Inserter[T] {
 	return i
 }
 
-func (i *Inserter[T]) OnDuplicateKey() *OnDuplicateKeyBuilder[T] {
-	return &OnDuplicateKeyBuilder[T]{
+func (i *Inserter[T]) Upsert() *UpsertBuilder[T] {
+	return &UpsertBuilder[T]{
 		i: i,
 	}
 }
@@ -156,15 +172,15 @@ func (i *Inserter[T]) buildOnDuplicateKey() error {
 	return nil
 }
 
-type OnDuplicateKeyBuilder[T any] struct {
+type UpsertBuilder[T any] struct {
 	i *Inserter[T]
 }
 
-func (o *OnDuplicateKeyBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
-	o.i.onDuplicate = &OnDuplicateKey{assigns: assigns}
-	return o.i
+func (u *UpsertBuilder[T]) Update(assigns ...Assignable) *Inserter[T] {
+	u.i.onDuplicate = &Upsert{assigns: assigns}
+	return u.i
 }
 
-type OnDuplicateKey struct {
+type Upsert struct {
 	assigns []Assignable
 }

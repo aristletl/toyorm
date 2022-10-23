@@ -1,5 +1,7 @@
 package toyorm
 
+import "context"
+
 const (
 	SQLSelect  = "SELECT "
 	SQLFrom    = "FROM"
@@ -14,6 +16,10 @@ const (
 	SQLInto   = "INTO"
 	SQLValues = "VALUES"
 )
+
+type Executor interface {
+	Exec(ctx context.Context) Result
+}
 
 type QueryBuilder interface {
 	Build() (*Query, error)

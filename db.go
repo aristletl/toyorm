@@ -2,14 +2,16 @@ package toyorm
 
 import (
 	"database/sql"
+
 	"github.com/aristletl/toyorm/internal/model"
 )
 
 type DBOption func(*DB)
 
 type DB struct {
-	r  *model.Registry
-	db *sql.DB
+	r       *model.Registry
+	dialect Dialect
+	db      *sql.DB
 }
 
 func Open(driver string, dns string, opts ...DBOption) (*DB, error) {
@@ -28,8 +30,9 @@ func OpenDB(db *sql.DB, opts ...DBOption) (*DB, error) {
 	}
 
 	res := &DB{
-		r:  r,
-		db: db,
+		r:       r,
+		dialect: &mysqlDialect{},
+		db:      db,
 	}
 
 	for _, opt := range opts {
@@ -41,5 +44,11 @@ func OpenDB(db *sql.DB, opts ...DBOption) (*DB, error) {
 func DBWithRegistry(r *model.Registry) DBOption {
 	return func(db *DB) {
 		db.r = r
+	}
+}
+
+func DBWithDialect(d Dialect) DBOption {
+	return func(db *DB) {
+		db.dialect = d
 	}
 }

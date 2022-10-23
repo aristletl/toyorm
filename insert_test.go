@@ -95,7 +95,7 @@ func TestInserter_Build(t *testing.T) {
 					FirstName: "Deng",
 					Age:       18,
 					LastName:  &sql.NullString{String: "Ming", Valid: true},
-				}).OnDuplicateKey().Update(Assign("FirstName", "Da")),
+				}).Upsert().Update(Assign("FirstName", "Da")),
 			wantQuery: &Query{
 				SQL: "INSERT INTO `test_model`(`id`, `first_name`, `age`, `last_name`) VALUES(?, ?, ?, ?) " +
 					"ON DUPLICATE KEY UPDATE `first_name`=?;",
@@ -111,7 +111,7 @@ func TestInserter_Build(t *testing.T) {
 					FirstName: "Deng",
 					Age:       18,
 					LastName:  &sql.NullString{String: "Ming", Valid: true},
-				}).OnDuplicateKey().Update(Assign("Invalid", "Da")),
+				}).Upsert().Update(Assign("Invalid", "Da")),
 			wantErr: errs.NewErrUnknownField("Invalid"),
 		},
 		{
@@ -129,7 +129,7 @@ func TestInserter_Build(t *testing.T) {
 					FirstName: "Da",
 					Age:       19,
 					LastName:  &sql.NullString{String: "Ming", Valid: true},
-				}).OnDuplicateKey().Update(Col("FirstName"), Col("LastName")),
+				}).Upsert().Update(Col("FirstName"), Col("LastName")),
 			wantQuery: &Query{
 				SQL: "INSERT INTO `test_model`(`id`, `first_name`, `age`, `last_name`) VALUES(?, ?, ?, ?), (?, ?, ?, ?) " +
 					"ON DUPLICATE KEY UPDATE `first_name`=VALUES(`first_name`), `last_name`=VALUES(`last_name`);",
