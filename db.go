@@ -1,6 +1,7 @@
 package toyorm
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/aristletl/toyorm/internal/model"
@@ -9,9 +10,20 @@ import (
 type DBOption func(*DB)
 
 type DB struct {
-	r       *model.Registry
-	dialect Dialect
-	db      *sql.DB
+	core
+	db *sql.DB
+}
+
+func (d *DB) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return d.db.ExecContext(ctx, query, args...)
+}
+
+func (d *DB) getCore() core {
+	return d.core
+}
+
+func (d *DB) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return d.db.QueryContext(ctx, query, args...)
 }
 
 func Open(driver string, dns string, opts ...DBOption) (*DB, error) {
@@ -30,15 +42,25 @@ func OpenDB(db *sql.DB, opts ...DBOption) (*DB, error) {
 	}
 
 	res := &DB{
-		r:       r,
-		dialect: &mysqlDialect{},
-		db:      db,
+		core: core{
+			r:       r,
+			dialect: &mysqlDialect{},
+		},
+		db: db,
 	}
 
 	for _, opt := range opts {
 		opt(res)
 	}
 	return res, nil
+}
+
+func (d *DB) Begin(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{tx: tx}, nil
 }
 
 func DBWithRegistry(r *model.Registry) DBOption {

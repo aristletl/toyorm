@@ -9,7 +9,8 @@ import (
 
 type Selector[T any] struct {
 	SQLBuilder
-	db         *DB
+	core
+	sess       Session
 	valCreator valuer.Creator
 
 	tableName string
@@ -23,9 +24,13 @@ type Selector[T any] struct {
 }
 
 // NewSelector 泛型T不支持指针
-func NewSelector[T any](db *DB) *Selector[T] {
+func NewSelector[T any](sess Session) *Selector[T] {
 	return &Selector[T]{
-		db:         db,
+		sess: sess,
+		core: sess.getCore(),
+		SQLBuilder: SQLBuilder{
+			quoter: sess.getCore().dialect.Quoter(),
+		},
 		valCreator: valuer.NewUnsafeValue,
 	}
 }
@@ -83,7 +88,7 @@ func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
 	// s.db 是我们定义的 DB
 	// s.db.db 则是 sql.DB
 	// 使用 QueryContext，从而和 GetMulti 能够复用处理结果集的代码
-	rows, err := s.db.db.QueryContext(ctx, q.SQL, q.Args...)
+	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +113,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 		t   T
 	)
 
-	s.model, err = s.db.r.Get(&t)
+	s.model, err = s.r.Get(&t)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +214,7 @@ func (s *Selector[T]) buildFrom() {
 		s.tableName = s.model.TableName
 		s.quota(s.tableName)
 	} else {
-		s.tableName = s.db.r.UnderscoreName(s.tableName)
+		s.tableName = s.r.UnderscoreName(s.tableName)
 		s.builder.WriteString(s.tableName)
 	}
 }

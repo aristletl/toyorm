@@ -10,16 +10,21 @@ import (
 
 type Inserter[T any] struct {
 	SQLBuilder
-	db          *DB
+	core
+	sess        Session
 	valCreator  valuer.Creator
 	values      []*T
 	columns     []string
 	onDuplicate *Upsert
 }
 
-func NewInserter[T any](db *DB) *Inserter[T] {
+func NewInserter[T any](sess Session) *Inserter[T] {
 	return &Inserter[T]{
-		db:         db,
+		sess: sess,
+		core: sess.getCore(),
+		SQLBuilder: SQLBuilder{
+			quoter: sess.getCore().dialect.Quoter(),
+		},
 		valCreator: valuer.NewUnsafeValue,
 	}
 }
@@ -31,7 +36,7 @@ func (i *Inserter[T]) Exec(ctx context.Context) Result {
 			err: err,
 		}
 	}
-	res, err := i.db.db.ExecContext(ctx, query.SQL, query.Args...)
+	res, err := i.sess.execContext(ctx, query.SQL, query.Args...)
 	return Result{
 		res: res,
 		err: err,
@@ -43,7 +48,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		return nil, errs.ErrInsertZeroRow
 	}
 	var err error
-	i.model, err = i.db.r.Get(i.values[0])
+	i.model, err = i.r.Get(i.values[0])
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +65,7 @@ func (i *Inserter[T]) Build() (*Query, error) {
 		return nil, err
 	}
 
-	if err = i.db.dialect.BuildOnDuplicateKey(&i.SQLBuilder, i.onDuplicate); err != nil {
+	if err = i.dialect.BuildOnDuplicateKey(&i.SQLBuilder, i.onDuplicate); err != nil {
 		return nil, err
 	}
 

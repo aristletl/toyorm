@@ -1,15 +1,17 @@
 package toyorm
 
 import (
+	"strings"
+
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/model"
-	"strings"
 )
 
 type SQLBuilder struct {
 	builder strings.Builder
 	model   *model.Model
 	args    []any
+	quoter  byte
 }
 
 func (s *SQLBuilder) comma() {
@@ -17,9 +19,9 @@ func (s *SQLBuilder) comma() {
 }
 
 func (s *SQLBuilder) quota(str string) {
-	s.builder.WriteString("`")
+	s.builder.WriteByte(s.quoter)
 	s.builder.WriteString(str)
-	s.builder.WriteString("`")
+	s.builder.WriteByte(s.quoter)
 }
 
 func (s *SQLBuilder) margin(str string) {
