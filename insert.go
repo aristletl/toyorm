@@ -10,7 +10,6 @@ import (
 
 type Inserter[T any] struct {
 	SQLBuilder
-	core
 	sess        Session
 	valCreator  valuer.Creator
 	values      []*T
@@ -19,11 +18,11 @@ type Inserter[T any] struct {
 }
 
 func NewInserter[T any](sess Session) *Inserter[T] {
+	c := sess.getCore()
 	return &Inserter[T]{
 		sess: sess,
-		core: sess.getCore(),
 		SQLBuilder: SQLBuilder{
-			quoter: sess.getCore().dialect.Quoter(),
+			core: c,
 		},
 		valCreator: valuer.NewUnsafeValue,
 	}
@@ -54,8 +53,8 @@ func (i *Inserter[T]) Build() (*Query, error) {
 	}
 
 	i.builder.WriteString(SQLInsert)
-	i.margin(SQLInto)
-	i.quota(i.model.TableName)
+	i.Margin(SQLInto)
+	i.Quota(i.model.TableName)
 
 	if err = i.buildColumns(); err != nil {
 		return nil, err
@@ -98,14 +97,14 @@ func (i *Inserter[T]) buildColumns() error {
 	if len(i.columns) == 0 {
 		for idx, c := range i.model.Columns {
 			if idx > 0 {
-				i.comma()
+				i.Comma()
 			}
-			i.quota(c.ColName)
+			i.Quota(c.ColName)
 		}
 	} else {
 		for idx, c := range i.columns {
 			if idx > 0 {
-				i.comma()
+				i.Comma()
 			}
 			if err := i.buildColumn(c); err != nil {
 				return err
@@ -130,13 +129,13 @@ func (i *Inserter[T]) buildValues() error {
 	i.builder.WriteString(" VALUES")
 	for j := 0; j < len(i.values); j++ {
 		if j > 0 {
-			i.comma()
+			i.Comma()
 		}
 		val := i.valCreator(i.values[j], i.model)
 		i.builder.WriteString("(")
 		for k, meta := range fields {
 			if k > 0 {
-				i.comma()
+				i.Comma()
 			}
 			i.builder.WriteString("?")
 			fdVal, err := val.Field(meta.Index)
@@ -146,33 +145,6 @@ func (i *Inserter[T]) buildValues() error {
 			i.addArgs(fdVal)
 		}
 		i.builder.WriteString(")")
-	}
-	return nil
-}
-
-func (i *Inserter[T]) buildOnDuplicateKey() error {
-	if i.onDuplicate != nil {
-		i.builder.WriteString(" ON DUPLICATE KEY UPDATE ")
-		for idx, assign := range i.onDuplicate.assigns {
-			if idx > 0 {
-				i.comma()
-			}
-			switch expr := assign.(type) {
-			case Assignment:
-				if err := i.buildColumn(expr.column); err != nil {
-					return err
-				}
-				i.builder.WriteString("=?")
-				i.addArgs(expr.val)
-			case Column:
-				if err := i.buildColumn(expr.name); err != nil {
-					return err
-				}
-				i.builder.WriteString("=VALUES(")
-				_ = i.buildColumn(expr.name)
-				i.builder.WriteString(")")
-			}
-		}
 	}
 	return nil
 }

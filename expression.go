@@ -14,6 +14,8 @@ type RawExpr struct {
 	args []any
 }
 
+func (r RawExpr) Expr() {}
+
 func (r RawExpr) selectable() {}
 
 func Raw(expr string, args ...any) RawExpr {

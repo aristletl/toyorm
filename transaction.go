@@ -32,6 +32,14 @@ func (t *Tx) RollBack() error {
 	return t.tx.Rollback()
 }
 
+func (t *Tx) RollbackIfNotCommit() error {
+	err := t.RollBack()
+	if err == sql.ErrTxDone {
+		return err
+	}
+	return nil
+}
+
 type Session interface {
 	getCore() core
 	queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)

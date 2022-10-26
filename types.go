@@ -15,6 +15,9 @@ const (
 	SQLInsert = "INSERT"
 	SQLInto   = "INTO"
 	SQLValues = "VALUES"
+
+	SQLUpdate = "UPDATE "
+	SQLSet    = "SET"
 )
 
 type Executor interface {

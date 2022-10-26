@@ -22,18 +22,16 @@ func (m *mysqlDialect) Quoter() byte {
 
 func (m *mysqlDialect) BuildOnDuplicateKey(b *SQLBuilder, odk *Upsert) error {
 	if odk != nil {
-		b.builder.WriteString(" ON DUPLICATE KEY UPDATE ")
+		b.Margin("ON DUPLICATE KEY UPDATE")
 		for idx, assign := range odk.assigns {
 			if idx > 0 {
-				b.comma()
+				b.Comma()
 			}
 			switch expr := assign.(type) {
 			case Assignment:
-				if err := b.buildColumn(expr.column); err != nil {
+				if err := b.buildAssignment(expr); err != nil {
 					return err
 				}
-				b.builder.WriteString("=?")
-				b.addArgs(expr.val)
 			case Column:
 				if err := b.buildColumn(expr.name); err != nil {
 					return err

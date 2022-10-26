@@ -8,23 +8,23 @@ import (
 )
 
 type SQLBuilder struct {
+	core
 	builder strings.Builder
 	model   *model.Model
 	args    []any
-	quoter  byte
 }
 
-func (s *SQLBuilder) comma() {
+func (s *SQLBuilder) Comma() {
 	s.builder.WriteString(", ")
 }
 
-func (s *SQLBuilder) quota(str string) {
-	s.builder.WriteByte(s.quoter)
+func (s *SQLBuilder) Quota(str string) {
+	s.builder.WriteByte(s.dialect.Quoter())
 	s.builder.WriteString(str)
-	s.builder.WriteByte(s.quoter)
+	s.builder.WriteByte(s.dialect.Quoter())
 }
 
-func (s *SQLBuilder) margin(str string) {
+func (s *SQLBuilder) Margin(str string) {
 	if str == "" {
 		return
 	}
@@ -33,10 +33,10 @@ func (s *SQLBuilder) margin(str string) {
 	s.builder.WriteString(" ")
 }
 
-func (s *SQLBuilder) as(alias string) {
+func (s *SQLBuilder) As(alias string) {
 	if alias != "" {
-		s.margin("AS")
-		s.quota(alias)
+		s.Margin("AS")
+		s.Quota(alias)
 	}
 }
 
@@ -62,8 +62,16 @@ func (s *SQLBuilder) buildColumn(col string) error {
 	if !ok {
 		return errs.NewErrUnknownField(col)
 	}
-	s.quota(fd.ColName)
+	s.Quota(fd.ColName)
 	return nil
+}
+
+func (s *SQLBuilder) buildPredicates(pres []Predicate) error {
+	pred := pres[0]
+	for i := 1; i < len(pres); i++ {
+		pred = pred.AND(pres[i])
+	}
+	return s.buildExpression(pred)
 }
 
 func (s *SQLBuilder) buildPredicate(e Predicate) error {
@@ -71,7 +79,7 @@ func (s *SQLBuilder) buildPredicate(e Predicate) error {
 		return err
 	}
 
-	s.margin(e.op.String())
+	s.Margin(e.op.String())
 
 	if err := s.buildSubExpr(e.right); err != nil {
 		return err
@@ -93,7 +101,7 @@ func (s *SQLBuilder) buildSubExpr(e Expression) error {
 	}
 }
 
-func (s *SQLBuilder) buildExpression(e Expression) error {
+func (s *SQLBuilder) buildExpression(e any) error {
 	if e == nil {
 		return nil
 	}
@@ -108,6 +116,8 @@ func (s *SQLBuilder) buildExpression(e Expression) error {
 		return s.buildPredicate(expr)
 	case Aggregate:
 		return s.buildAggregate(expr, false)
+	case RawExpr:
+		return s.buildRawExpr(expr)
 	default:
 		return errs.NewErrUnsupportedExpressionType(e)
 	}
@@ -120,7 +130,23 @@ func (s *SQLBuilder) buildAggregate(a Aggregate, useAlisa bool) error {
 		return err
 	}
 	if useAlisa {
-		s.as(a.alias)
+		s.As(a.alias)
+	}
+	return nil
+}
+
+func (s *SQLBuilder) buildAssignment(assign Assignment) error {
+	if err := s.buildColumn(assign.column); err != nil {
+		return err
+	}
+	s.builder.WriteString("=")
+	return s.buildExpression(assign.val)
+}
+
+func (s *SQLBuilder) buildRawExpr(raw RawExpr) error {
+	s.builder.WriteString(raw.raw)
+	if len(raw.args) != 0 {
+		s.addArgs(raw.args...)
 	}
 	return nil
 }

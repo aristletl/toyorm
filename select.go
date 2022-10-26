@@ -9,7 +9,6 @@ import (
 
 type Selector[T any] struct {
 	SQLBuilder
-	core
 	sess       Session
 	valCreator valuer.Creator
 
@@ -27,9 +26,8 @@ type Selector[T any] struct {
 func NewSelector[T any](sess Session) *Selector[T] {
 	return &Selector[T]{
 		sess: sess,
-		core: sess.getCore(),
 		SQLBuilder: SQLBuilder{
-			quoter: sess.getCore().dialect.Quoter(),
+			core: sess.getCore(),
 		},
 		valCreator: valuer.NewUnsafeValue,
 	}
@@ -146,12 +144,14 @@ func (s *Selector[T]) Build() (*Query, error) {
 	}
 
 	if s.limit > 0 {
-		s.builder.WriteString(" LIMIT ?")
+		s.Margin(SQLLimit)
+		s.builder.WriteString("?")
 		s.addArgs(s.limit)
 	}
 
 	if s.offset > 0 {
-		s.builder.WriteString(" OFFSET ?")
+		s.Margin(SQLOffset)
+		s.builder.WriteString("?")
 		s.addArgs(s.offset)
 	}
 
@@ -169,14 +169,14 @@ func (s *Selector[T]) buildColumns() error {
 
 	for i, c := range s.columns {
 		if i > 0 {
-			s.comma()
+			s.Comma()
 		}
 		switch col := c.(type) {
 		case Column:
 			if err := s.buildColumn(col.name); err != nil {
 				return err
 			}
-			s.as(col.alias)
+			s.As(col.alias)
 		case Aggregate:
 			if err := s.buildAggregate(col, true); err != nil {
 				return err
@@ -192,27 +192,19 @@ func (s *Selector[T]) buildColumns() error {
 	return nil
 }
 
-func (s *Selector[T]) buildPredicates(pres []Predicate) error {
-	pred := pres[0]
-	for i := 1; i < len(pres); i++ {
-		pred = pred.AND(pres[i])
-	}
-	return s.buildExpression(pred)
-}
-
 func (s *Selector[T]) buildWhere() error {
 	if len(s.where) != 0 {
-		s.margin(SQLWhere)
+		s.Margin(SQLWhere)
 		return s.buildPredicates(s.where)
 	}
 	return nil
 }
 
 func (s *Selector[T]) buildFrom() {
-	s.margin(SQLFrom)
+	s.Margin(SQLFrom)
 	if s.tableName == "" {
 		s.tableName = s.model.TableName
-		s.quota(s.tableName)
+		s.Quota(s.tableName)
 	} else {
 		s.tableName = s.r.UnderscoreName(s.tableName)
 		s.builder.WriteString(s.tableName)
@@ -221,10 +213,10 @@ func (s *Selector[T]) buildFrom() {
 
 func (s *Selector[T]) buildGroupBy() error {
 	if len(s.groupBy) != 0 {
-		s.margin(SQLGroupBy)
+		s.Margin(SQLGroupBy)
 		for i, c := range s.groupBy {
 			if i > 0 {
-				s.comma()
+				s.Comma()
 			}
 			if err := s.buildColumn(c.name); err != nil {
 				return err
@@ -236,7 +228,7 @@ func (s *Selector[T]) buildGroupBy() error {
 
 func (s *Selector[T]) buildHaving() error {
 	if len(s.having) != 0 {
-		s.margin(SQLHaving)
+		s.Margin(SQLHaving)
 		return s.buildPredicates(s.having)
 	}
 	return nil
@@ -244,10 +236,10 @@ func (s *Selector[T]) buildHaving() error {
 
 func (s *Selector[T]) buildOrderBy() error {
 	if len(s.orderBy) != 0 {
-		s.margin(SQLOrderBy)
+		s.Margin(SQLOrderBy)
 		for i, o := range s.orderBy {
 			if i > 0 {
-				s.comma()
+				s.Comma()
 			}
 			if err := s.buildColumn(o.col); err != nil {
 				return err

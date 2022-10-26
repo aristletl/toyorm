@@ -7,9 +7,10 @@ func (o Op) String() string {
 }
 
 const (
-	opEQ = "="
-	opLT = "<"
-	opGT = ">"
+	opEQ  = "="
+	opLT  = "<"
+	opGT  = ">"
+	opADD = "+"
 
 	opNOT = "NOT"
 	opAND = "AND"

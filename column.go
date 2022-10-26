@@ -46,6 +46,14 @@ func (c Column) AS(alias string) Column {
 	}
 }
 
+func (c Column) Add(arg int) Predicate {
+	return Predicate{
+		left:  c,
+		op:    opADD,
+		right: Value{val: arg},
+	}
+}
+
 type OrderBy struct {
 	col   string
 	order string

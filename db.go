@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 
+	"go.uber.org/multierr"
+
 	"github.com/aristletl/toyorm/internal/model"
 )
 
@@ -61,6 +63,27 @@ func (d *DB) Begin(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 		return nil, err
 	}
 	return &Tx{tx: tx}, nil
+}
+
+func (d *DB) DoTx(ctx context.Context, opts *sql.TxOptions, task func(ctx context.Context, tx *Tx) error) (err error) {
+	tx, err := d.Begin(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	panicked := true
+	defer func() {
+		if panicked {
+			e := tx.RollBack()
+			err = multierr.Combine(err, e)
+		} else {
+			err = multierr.Combine(err, tx.Commit())
+		}
+	}()
+
+	err = task(ctx, tx)
+	panicked = false
+	return
 }
 
 func DBWithRegistry(r *model.Registry) DBOption {
