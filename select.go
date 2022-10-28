@@ -2,6 +2,7 @@ package toyorm
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/valuer"
@@ -79,30 +80,48 @@ func (s *Selector[T]) Limit(limit int) *Selector[T] {
 
 // Get 数据库查询
 func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
-	q, err := s.Build()
-	if err != nil {
-		return nil, err
-	}
-	// s.db 是我们定义的 DB
-	// s.db.db 则是 sql.DB
-	// 使用 QueryContext，从而和 GetMulti 能够复用处理结果集的代码
-	rows, err := s.sess.queryContext(ctx, q.SQL, q.Args...)
-	if err != nil {
-		return nil, err
+	var root Handler = func(ctx context.Context, qc *QueryContext) *QueryResult {
+		q, err := qc.Builder.Build()
+		if err != nil {
+			return &QueryResult{Err: err}
+		}
+		// 使用 QueryContext，从而和 GetMulti 能够复用处理结果集的代码
+		rows, err := s.sess.queryContext(ctx, q.SQL, q.Args...)
+		if err != nil {
+			return &QueryResult{Err: err}
+		}
+
+		if !rows.Next() {
+			return &QueryResult{Err: errs.ErrNoRows}
+		}
+
+		tp := new(T)
+		val := s.valCreator(tp, s.model)
+		err = val.SetColumns(rows)
+		return &QueryResult{
+			Result: tp,
+			Err:    err,
+		}
 	}
 
-	if !rows.Next() {
-		return nil, errs.ErrNoRows
+	for i := len(s.ms) - 1; i >= 0; i-- {
+		root = s.ms[i](root)
 	}
 
-	tp := new(T)
-	//meta, err := s.db.r.Get(tp)
-	//if err != nil {
-	//	return nil, err
-	//}
-	val := s.valCreator(tp, s.model)
-	err = val.SetColumns(rows)
-	return tp, err
+	res := root(ctx, &QueryContext{
+		Type:    SQLSelect,
+		Builder: s,
+	})
+
+	if res.Err != nil {
+		return nil, res.Err
+	}
+
+	if t, ok := res.Result.(*T); ok {
+		return t, nil
+	}
+
+	return nil, errors.New("ORM: 非正常格式")
 }
 
 func (s *Selector[T]) Build() (*Query, error) {
@@ -146,13 +165,13 @@ func (s *Selector[T]) Build() (*Query, error) {
 	if s.limit > 0 {
 		s.Margin(SQLLimit)
 		s.builder.WriteString("?")
-		s.addArgs(s.limit)
+		s.AddArgs(s.limit)
 	}
 
 	if s.offset > 0 {
 		s.Margin(SQLOffset)
 		s.builder.WriteString("?")
-		s.addArgs(s.offset)
+		s.AddArgs(s.offset)
 	}
 
 	return &Query{

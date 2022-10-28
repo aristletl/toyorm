@@ -1,6 +1,7 @@
 package toyorm
 
 import (
+	"context"
 	"github.com/aristletl/toyorm/internal/errs"
 	"github.com/aristletl/toyorm/internal/valuer"
 )
@@ -12,6 +13,18 @@ type Updater[T any] struct {
 	val        *T
 	assigns    []Assignable
 	where      []Predicate
+}
+
+func (u *Updater[T]) Exec(ctx context.Context) Result {
+	q, err := u.Build()
+	if err != nil {
+		return Result{
+			err: err,
+		}
+	}
+	res := Result{}
+	res.res, res.err = u.sess.execContext(ctx, q.SQL, q.Args...)
+	return res
 }
 
 func NewUpdater[T any](sess Session) *Updater[T] {
@@ -53,7 +66,7 @@ func (u *Updater[T]) Build() (*Query, error) {
 				return nil, err
 			}
 			u.builder.WriteString("=?")
-			u.addArgs(arg)
+			u.AddArgs(arg)
 		case Assignment:
 			if err = u.buildAssignment(expr); err != nil {
 				return nil, err

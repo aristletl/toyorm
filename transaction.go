@@ -48,5 +48,6 @@ type Session interface {
 
 type core struct {
 	r       *model.Registry
+	ms      []Middleware
 	dialect Dialect
 }

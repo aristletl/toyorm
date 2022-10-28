@@ -97,3 +97,9 @@ func DBWithDialect(d Dialect) DBOption {
 		db.dialect = d
 	}
 }
+
+func DBWithMiddlewares(ms ...Middleware) DBOption {
+	return func(db *DB) {
+		db.ms = ms
+	}
+}

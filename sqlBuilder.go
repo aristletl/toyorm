@@ -52,7 +52,7 @@ func (s *SQLBuilder) brackets(fn any) error {
 	return nil
 }
 
-func (s *SQLBuilder) addArgs(vals ...any) {
+func (s *SQLBuilder) AddArgs(vals ...any) {
 	s.args = append(s.args, vals...)
 }
 
@@ -146,7 +146,7 @@ func (s *SQLBuilder) buildAssignment(assign Assignment) error {
 func (s *SQLBuilder) buildRawExpr(raw RawExpr) error {
 	s.builder.WriteString(raw.raw)
 	if len(raw.args) != 0 {
-		s.addArgs(raw.args...)
+		s.AddArgs(raw.args...)
 	}
 	return nil
 }

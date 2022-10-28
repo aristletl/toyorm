@@ -142,7 +142,7 @@ func (i *Inserter[T]) buildValues() error {
 			if err != nil {
 				return err
 			}
-			i.addArgs(fdVal)
+			i.AddArgs(fdVal)
 		}
 		i.builder.WriteString(")")
 	}
