@@ -13,7 +13,7 @@ type Selector[T any] struct {
 	sess       Session
 	valCreator valuer.Creator
 
-	tableName string
+	tableName TableReference
 	where     []Predicate
 	columns   []Selectable
 	groupBy   []Column
@@ -48,7 +48,7 @@ func (s *Selector[T]) Where(ps ...Predicate) *Selector[T] {
 }
 
 // From select 语句的 from 指定表名
-func (s *Selector[T]) From(table string) *Selector[T] {
+func (s *Selector[T]) From(table TableReference) *Selector[T] {
 	s.tableName = table
 	return s
 }
@@ -221,12 +221,12 @@ func (s *Selector[T]) buildWhere() error {
 
 func (s *Selector[T]) buildFrom() {
 	s.Margin(SQLFrom)
-	if s.tableName == "" {
-		s.tableName = s.model.TableName
-		s.Quota(s.tableName)
-	} else {
-		s.tableName = s.r.UnderscoreName(s.tableName)
-		s.builder.WriteString(s.tableName)
+	switch s.tableName.(type) {
+	case nil:
+		s.Quota(s.model.TableName)
+	case Table:
+
+	case Join:
 	}
 }
 
